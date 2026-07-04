@@ -1,0 +1,13 @@
+; spi_pio.pio — SPI Master Mode 0 (CPOL=0, CPHA=0) for MCP2515
+;
+; Autopull/autopush 8 bits. Clock on sideset.
+; Pin mapping: sideset=SCK, out=MOSI, in=MISO
+
+.program spi_master
+.side_set 1
+
+.wrap_target
+bitloop:
+    out pins, 1        side 0 [1]  ; drive MOSI, SCK low
+    in  pins, 1        side 1 [1]  ; sample MISO, SCK high
+.wrap
