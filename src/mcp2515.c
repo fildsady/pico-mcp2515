@@ -144,7 +144,15 @@ static void mcp_reset(void) {
     cs_low();
     spi_xfer_byte(MCP_RESET);
     cs_high();
-    busy_wait_ms(100);  /* 100ms — allow 8MHz crystal to stabilise after reset */
+    /* vTaskDelay, not busy_wait_ms — yields this task's CPU core to the
+     * scheduler instead of spinning on it. Safe here: every caller of
+     * mcp_reset() (mcp2515_init()/mcp2515_start(), both below) only ever
+     * runs from task_can's own task context, never from int_isr() or any
+     * other ISR. Matters because before this, a busy-wait here (100ms on
+     * mcp2515_init(), which now runs inside task_can — see main.c) could
+     * fully occupy a CPU core, delaying lower-priority tasks like task_lcd
+     * from running at all until it finished. */
+    vTaskDelay(pdMS_TO_TICKS(100));  /* allow 8MHz crystal to stabilise after reset */
 }
 
 /* ── Baud rate config (8MHz crystal) ─────────────────────────────────── */
@@ -246,12 +254,12 @@ bool mcp2515_init(uint32_t can_baud_hz, mcp2515_rx_cb_t rx_cb) {
 
         /* Not in config mode — force it explicitly via CANCTRL */
         mcp_write_reg(REG_CANCTRL, MODE_CONFIG);
-        busy_wait_ms(10);
+        vTaskDelay(pdMS_TO_TICKS(10));
         stat = mcp_read_reg(REG_CANSTAT);
         s_last_canstat = stat;
         if ((stat & 0xE0) == MODE_CONFIG) { config_ok = true; break; }
 
-        busy_wait_ms(50);
+        vTaskDelay(pdMS_TO_TICKS(50));
     }
     if (!config_ok) {
         s_initialized = false;
@@ -270,7 +278,7 @@ bool mcp2515_init(uint32_t can_baud_hz, mcp2515_rx_cb_t rx_cb) {
 
     /* Switch to normal mode */
     mcp_bit_modify(REG_CANCTRL, 0xE0, MODE_NORMAL);
-    busy_wait_ms(10);
+    vTaskDelay(pdMS_TO_TICKS(10));
 
     stat = mcp_read_reg(REG_CANSTAT);
     if ((stat & 0xE0) != MODE_NORMAL) {
@@ -423,7 +431,7 @@ void mcp2515_start(uint32_t can_baud_hz) {
     mcp_write_reg(0x70, 0x60);          /* REG_RXB1CTRL = 0x70 */
     mcp_write_reg(REG_CANINTE, INT_RX0 | INT_RX1);
     mcp_bit_modify(REG_CANCTRL, 0xE0, MODE_NORMAL);
-    busy_wait_ms(10);
+    vTaskDelay(pdMS_TO_TICKS(10));
     s_initialized = (mcp_read_reg(REG_CANSTAT) & 0xE0) == MODE_NORMAL;
 }
 
@@ -463,6 +471,6 @@ void mcp2515_set_listen_only(bool enable) {
     if (!s_initialized) return;
     uint8_t mode = enable ? MODE_LISTEN : MODE_NORMAL;
     mcp_bit_modify(REG_CANCTRL, 0xE0, mode);
-    busy_wait_ms(10);
+    vTaskDelay(pdMS_TO_TICKS(10));
     s_initialized = (mcp_read_reg(REG_CANSTAT) & 0xE0) == mode;
 }
